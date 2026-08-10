@@ -1,0 +1,111 @@
+/*!
+	Theme Name: Messenger
+	Theme URI: https://www.dev.messenger.com.au/
+	Description: Messenger theme is a generic, extensible theme which acts as a base for all Messenger projects.
+	Author: Messenger Team
+	Author URI: https://www.dev.messenger.com.au/
+	Version: 0.1.2
+	Stable tag: 0.1.0
+	Requires at least: 6.0
+	Tested up to: 6.8
+	Requires PHP: 7.4
+	License: GNU General Public License v3 or later.
+	License URI: https://www.gnu.org/licenses/gpl-3.0.html
+	Text Domain: messenger-theme
+	Tags: accessibility-ready, flexible-header, custom-colors, custom-menu, custom-logo, featured-images, rtl-language-support, threaded-comments, translation-ready,
+*/
+
+@import "tailwindcss";
+
+@theme {
+  --breakpoint-sm: 532px;
+  --breakpoint-md: 804px;
+  --breakpoint-lg: 960px;
+  --breakpoint-xl: 1440px;
+  --breakpoint-xxl: 1980px;
+}
+
+/*! Any extraneous CSS goes here. */
+
+@media (max-width: 959px) {
+    .wp-block-columns:not(.is-not-stacked-on-mobile)>.wp-block-column {
+        flex-basis: unset!important;
+    }
+	.wp-block-columns-is-layout-flex {
+		flex-direction: column;
+	}
+	.wp-block-column.is-layout-flow.wp-block-column-is-layout-flow {
+		margin: 0 auto;
+	}
+}
+
+@media (max-width: 1440px) {
+	.site-navigation {
+		flex-grow: 1;
+		justify-content: center;
+	}
+}
+
+@media(min-width: 1440px) {
+	.messenger-inner-flex {
+		display: flex;
+		align-items: baseline;
+	}
+	.site-navigation ul.menu {
+		flex-direction: column;
+	}
+}
+@media(min-width: 1920px) {
+	.messenger-outer-flex {
+		display: flex;
+	}
+}
+
+h1.entry-title {
+    font-size: 45px;
+}
+h2.wp-block-heading {
+    font-size: 28.75px;
+}
+h3.wp-block-heading {
+    font-size: 23.75px;
+}
+p, li {
+    font-size: 20px;
+}
+li {
+    list-style: disc;
+    list-style-position: outside;
+    margin-left: 1em;
+}
+.page-content {
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+
+.wp-block-image img {
+	width: 100%;
+}
+
+.messenger_contact_form_container {
+	background-color: #DEDEDE;
+}
+.messenger_contact_form_container h3 {
+	color: #fff;
+}
+.messenger_contact_form_container * {
+	transition: all 0.25s;
+}
+.messenger_contact_form_container textarea, .messenger_contact_form_container input[type="text"], .messenger_contact_field input[type="email"] {
+	background-color: #fff;
+}
+.messenger_contact_form_container input[type="submit"] {
+	color: #fff;
+	background-color: #ea1d1d;
+}
+.messenger_contact_form_container input.touch-track, .messenger_contact_form_container textarea.touch-track {
+	background-color: hsl(60, 82%, 68%);
+}
+.messenger_contact_form_container input.touch-track.touched, .messenger_contact_form_container textarea.touch-track.touched {
+	background-color: #fff;
+}
