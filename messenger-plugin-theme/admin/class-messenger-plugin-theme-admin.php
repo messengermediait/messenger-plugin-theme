@@ -100,4 +100,67 @@ class Messenger_Plugin_Theme_Admin {
 
 	}
 
+	public function setup_menu() {
+		add_menu_page('Messenger Admin', 'Messenger Admin', 'read', 'messenger-admin-options', [$this, 'DisplayMainAdmin']);
+	}
+
+	public function DisplayMainAdmin() {
+		$packages = [
+			(object)["name" => "Messenger Theme", "type" => "Theme", "version" => "0.1.2", "installs" => 1],
+			(object)["name" => "Cargo Tracking", "type" => "Plugin", "version" => "1.18", "installs" => 3],
+			(object)["name" => "Cargo Tracking", "type" => "Theme", "version" => "1.1.6", "installs" => 3],
+		];
+		?>
+		<style>
+			.messenger-package-container table {
+			border: 1px solid rgba(0, 0, 0, 0.5);
+			border-radius: 0.5em;
+			width: 100%;
+			box-shadow: 0px 1px 4px rgba(128, 128, 128, 0.5);
+		}
+		.messenger-package-container tr:nth-child(odd) {
+			background: rgba(255, 255, 255, 0.75);
+		}
+		.messenger-package-container th {
+			background: #fff;
+			padding: 0.5em;
+			font-size: 1.2em;
+			border: 1px solid #fff;
+		}
+		.messenger-package-container td {
+			padding: 0.5em 1.2em;
+			font-size: 1.2em;
+		}
+		a.btn {
+			margin: 1em;
+			display: inline-block;
+			box-shadow: 0px 1px 2px #000;
+			border-radius: 4px;
+			background: #3858e9;
+			color: #fff;
+			padding: 0.5em;
+			text-shadow: 0 1px 1px #000;
+			text-decoration: none;
+		}
+		</style>
+		<div class="wrap">
+			<h2>Manage Messenger Plugin and Theme Installations</h2>
+			<div class="messenger-plugin-theme-admin">
+				<h3>Packages</h3>
+					<div class="messenger-package-container">
+						<table>
+							<tr><th>Name</th><th>Type</th><th>Version</th><th>Installs</th><th></th></tr>
+						<?php
+						foreach ($packages as $package) { ?>
+							<tr><td><?php echo $package->name; ?></td><td><?php echo $package->type; ?></td><td><?php echo $package->version; ?></td><td><?php echo $package->installs; ?></td><td><a href="#" class="btn">View</a></td></tr>
+						<?php
+						} ?>
+						</table>
+					</div>
+					<div><a href="#" class="btn">Create New Package</a></div>
+			</div>
+		</div>
+		<?php
+	}
+
 }

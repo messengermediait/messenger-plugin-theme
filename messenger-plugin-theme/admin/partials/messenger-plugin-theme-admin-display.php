@@ -14,3 +14,12 @@
 ?>
 
 <!-- This file should primarily consist of HTML with a little bit of PHP. -->
+<?php 
+function MessengerAdminPage() {
+    ?>
+    <div class="wrap">
+        <h2>Manage Messenger Plugin and Theme Installations</h2>
+        <p>Hello</p>
+    </div>
+    <?php
+}
