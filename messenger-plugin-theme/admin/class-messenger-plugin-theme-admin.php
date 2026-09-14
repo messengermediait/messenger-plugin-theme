@@ -106,9 +106,9 @@ class Messenger_Plugin_Theme_Admin {
 
 	public function DisplayMainAdmin() {
 		$packages = [
-			(object)["name" => "Messenger Theme", "type" => "Theme", "version" => "0.1.2", "installs" => 1],
-			(object)["name" => "Cargo Tracking", "type" => "Plugin", "version" => "1.18", "installs" => 3],
-			(object)["name" => "Cargo Tracking", "type" => "Theme", "version" => "1.1.6", "installs" => 3],
+			(object)["id" => "123", "name" => "Messenger Theme", "type" => "Theme", "version" => "0.1.2", "installs" => 1],
+			(object)["id" => "456", "name" => "Cargo Tracking", "type" => "Plugin", "version" => "1.18", "installs" => 3],
+			(object)["id" => "789", "name" => "Cargo Tracking", "type" => "Theme", "version" => "1.1.6", "installs" => 3],
 		];
 		?>
 		<style>
@@ -142,9 +142,19 @@ class Messenger_Plugin_Theme_Admin {
 			text-shadow: 0 1px 1px #000;
 			text-decoration: none;
 		}
+		a.btn.btn-warn {
+			background: red;
+		}
+		.new-version-form {
+			transition: all 0.25s;
+			opacity: 0;
+			max-height: 0px;
+			overflow: hidden;
+		}
 		</style>
 		<div class="wrap">
 			<h2>Manage Messenger Plugin and Theme Installations</h2>
+			<?php if (!isset($_GET['package_id'])) { ?>
 			<div class="messenger-plugin-theme-admin">
 				<h3>Packages</h3>
 					<div class="messenger-package-container">
@@ -152,13 +162,64 @@ class Messenger_Plugin_Theme_Admin {
 							<tr><th>Name</th><th>Type</th><th>Version</th><th>Installs</th><th></th></tr>
 						<?php
 						foreach ($packages as $package) { ?>
-							<tr><td><?php echo $package->name; ?></td><td><?php echo $package->type; ?></td><td><?php echo $package->version; ?></td><td><?php echo $package->installs; ?></td><td><a href="#" class="btn">View</a></td></tr>
+							<tr><td><?php echo $package->name; ?></td><td><?php echo $package->type; ?></td><td><?php echo $package->version; ?></td><td><?php echo $package->installs; ?></td><td><a href="?page=messenger-admin-options&package_id=<?php echo $package->id; ?>" class="btn">View</a></td></tr>
 						<?php
 						} ?>
 						</table>
 					</div>
 					<div><a href="#" class="btn">Create New Package</a></div>
 			</div>
+			<?php } else {
+				$package_id = $_GET['package_id'];
+				$package = array_find($packages, function($pkg) use ($package_id) {return $pkg->id == $package_id;});
+				$installs = [
+					(object)["id"=>"abc", "package_id"=>"123", "site"=>"www.example.com", "key"=>"123456"],
+					(object)["id"=>"def", "package_id"=>"456", "site"=>"www.example.com", "key"=>"223456"],
+					(object)["id"=>"ghi", "package_id"=>"456", "site"=>"www.example2.com", "key"=>"323456"],
+					(object)["id"=>"jkl", "package_id"=>"456", "site"=>"www.example3.com", "key"=>"423456"],
+					(object)["id"=>"def", "package_id"=>"789", "site"=>"www.example.com", "key"=>"523456"],
+					(object)["id"=>"ghi", "package_id"=>"789", "site"=>"www.example2.com", "key"=>"623456"],
+					(object)["id"=>"jkl", "package_id"=>"789", "site"=>"www.example3.com", "key"=>"723456"],
+				];
+				$package_installs = array_filter($installs, function($inst) use ($package_id) { return $inst->package_id == $package_id;});
+				
+			?>
+			<div class="messenger-plugin-theme-admin">
+				<h3><?php echo $package->name; ?> - <?php echo $package->type; ?></h3>
+				<div class="messenger-package-container">
+					<p><strong>Version: </strong> <?php echo $package->version; ?></p>
+					<p><a href="#" download class="btn">Download Zip</a></p>
+					<p><em><a href="#">Show previous versions...</a></em></p>
+				</div>
+				<div class="messenger-package-container">
+					<p><strong><button onClick="showNewForm()">Publish New Version...</button></strong></p>
+					<div id="new-version-form-container" class="new-version-form">
+						<form id="new-version-form">
+							<div><label>Version Number: </label><input type="text" id="new-version-number" /></div>
+							<div><label>File: </label><input type="file" id="new-version-zip" /></div>
+							<div><input type="button" value="Publish" /></div>
+						</form>
+					</div>
+					<script>function showNewForm() {
+						const container = document.getElementById('new-version-form-container');
+						container.style.opacity = 1;
+						container.style.maxHeight = '500px';
+					}</script>
+				</div>
+				<h4>Installations</h4>
+				<div class="messenger-package-container">
+					<table>
+						<tr><th>Site</th><th>Key</th><th>Actions</th></tr>
+					<?php
+						foreach($package_installs as $install) {?>
+							<tr><td><?php echo $install->site; ?></td><td><?php echo $install->key; ?></td><td><a href="#" class="btn">Edit</a><a href="#" class="btn btn-warn">Delete</a></td></tr>
+						<?php }
+					?>
+					</table>
+				</div>
+			</div>
+
+			<?php }  ?>
 		</div>
 		<?php
 	}
