@@ -105,11 +105,31 @@ class Messenger_Plugin_Theme_Admin {
 	}
 
 	public function DisplayMainAdmin() {
-		$packages = [
-			(object)["id" => "123", "name" => "Messenger Theme", "type" => "Theme", "version" => "0.1.2", "installs" => 1],
-			(object)["id" => "456", "name" => "Cargo Tracking", "type" => "Plugin", "version" => "1.18", "installs" => 3],
-			(object)["id" => "789", "name" => "Cargo Tracking", "type" => "Theme", "version" => "1.1.6", "installs" => 3],
-		];
+		global $wpdb;
+
+		$packages_table = $wpdb->prefix . 'messenger_packages';
+		$installs_table = $wpdb->prefix . 'messenger_installs';
+		$packages       = $wpdb->get_results(
+			"SELECT packages.*, (SELECT COUNT(*) FROM `$installs_table` AS installs WHERE installs.package_id = packages.id) AS installs FROM `$packages_table` AS packages ORDER BY packages.name ASC"
+		);
+		$package_id     = isset( $_GET['package_id'] ) ? sanitize_text_field( wp_unslash( $_GET['package_id'] ) ) : null;
+		$package        = null;
+		$package_installs = array();
+
+		if ( null !== $package_id ) {
+			$package = $wpdb->get_row(
+				$wpdb->prepare( "SELECT * FROM `$packages_table` WHERE id = %s", $package_id )
+			);
+
+			if ( $package ) {
+				$package_installs = $wpdb->get_results(
+					$wpdb->prepare(
+						"SELECT id, package_id, site, install_key FROM `$installs_table` WHERE package_id = %s ORDER BY install_row_id ASC",
+						$package_id
+					)
+				);
+			}
+		}
 		?>
 		<style>
 			.messenger-package-container table {
@@ -154,40 +174,28 @@ class Messenger_Plugin_Theme_Admin {
 		</style>
 		<div class="wrap">
 			<h2>Manage Messenger Plugin and Theme Installations</h2>
-			<?php if (!isset($_GET['package_id'])) { ?>
+			<?php if ( null === $package_id ) { ?>
 			<div class="messenger-plugin-theme-admin">
 				<h3>Packages</h3>
 					<div class="messenger-package-container">
 						<table>
 							<tr><th>Name</th><th>Type</th><th>Version</th><th>Installs</th><th></th></tr>
 						<?php
-						foreach ($packages as $package) { ?>
-							<tr><td><?php echo $package->name; ?></td><td><?php echo $package->type; ?></td><td><?php echo $package->version; ?></td><td><?php echo $package->installs; ?></td><td><a href="?page=messenger-admin-options&package_id=<?php echo $package->id; ?>" class="btn">View</a></td></tr>
+						foreach ( $packages as $package_item ) { ?>
+							<tr><td><?php echo esc_html( $package_item->name ); ?></td><td><?php echo esc_html( $package_item->type ); ?></td><td><?php echo esc_html( $package_item->version ); ?></td><td><?php echo esc_html( $package_item->installs ); ?></td><td><a href="?page=messenger-admin-options&amp;package_id=<?php echo rawurlencode( $package_item->id ); ?>" class="btn">View</a></td></tr>
 						<?php
 						} ?>
 						</table>
 					</div>
 					<div><a href="#" class="btn">Create New Package</a></div>
 			</div>
-			<?php } else {
-				$package_id = $_GET['package_id'];
-				$package = array_find($packages, function($pkg) use ($package_id) {return $pkg->id == $package_id;});
-				$installs = [
-					(object)["id"=>"abc", "package_id"=>"123", "site"=>"www.example.com", "key"=>"123456"],
-					(object)["id"=>"def", "package_id"=>"456", "site"=>"www.example.com", "key"=>"223456"],
-					(object)["id"=>"ghi", "package_id"=>"456", "site"=>"www.example2.com", "key"=>"323456"],
-					(object)["id"=>"jkl", "package_id"=>"456", "site"=>"www.example3.com", "key"=>"423456"],
-					(object)["id"=>"def", "package_id"=>"789", "site"=>"www.example.com", "key"=>"523456"],
-					(object)["id"=>"ghi", "package_id"=>"789", "site"=>"www.example2.com", "key"=>"623456"],
-					(object)["id"=>"jkl", "package_id"=>"789", "site"=>"www.example3.com", "key"=>"723456"],
-				];
-				$package_installs = array_filter($installs, function($inst) use ($package_id) { return $inst->package_id == $package_id;});
-				
-			?>
+			<?php } elseif ( ! $package ) { ?>
+				<p><?php esc_html_e( 'Package not found.', 'messenger-plugin-theme' ); ?></p>
+			<?php } else { ?>
 			<div class="messenger-plugin-theme-admin">
-				<h3><?php echo $package->name; ?> - <?php echo $package->type; ?></h3>
+				<h3><?php echo esc_html( $package->name ); ?> - <?php echo esc_html( $package->type ); ?></h3>
 				<div class="messenger-package-container">
-					<p><strong>Version: </strong> <?php echo $package->version; ?></p>
+					<p><strong>Version: </strong> <?php echo esc_html( $package->version ); ?></p>
 					<p><a href="#" download class="btn">Download Zip</a></p>
 					<p><em><a href="#">Show previous versions...</a></em></p>
 				</div>
@@ -211,8 +219,8 @@ class Messenger_Plugin_Theme_Admin {
 					<table>
 						<tr><th>Site</th><th>Key</th><th>Actions</th></tr>
 					<?php
-						foreach($package_installs as $install) {?>
-							<tr><td><?php echo $install->site; ?></td><td><?php echo $install->key; ?></td><td><a href="#" class="btn">Edit</a><a href="#" class="btn btn-warn">Delete</a></td></tr>
+						foreach ( $package_installs as $install ) { ?>
+							<tr><td><?php echo esc_html( $install->site ); ?></td><td><?php echo esc_html( $install->install_key ); ?></td><td><a href="#" class="btn">Edit</a><a href="#" class="btn btn-warn">Delete</a></td></tr>
 						<?php }
 					?>
 					</table>
