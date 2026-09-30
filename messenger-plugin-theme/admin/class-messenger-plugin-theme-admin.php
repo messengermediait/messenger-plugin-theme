@@ -101,7 +101,47 @@ class Messenger_Plugin_Theme_Admin {
 	}
 
 	public function setup_menu() {
-		add_menu_page('Messenger Admin', 'Messenger Admin', 'read', 'messenger-admin-options', [$this, 'DisplayMainAdmin']);
+		add_menu_page('Messenger Admin', 'Messenger Admin', 'manage_options', 'messenger-admin-options', [$this, 'DisplayMainAdmin']);
+	}
+
+	public function handle_create_package() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to create packages.', 'messenger-plugin-theme' ) );
+		}
+
+		check_admin_referer( 'messenger_create_package', 'messenger_create_package_nonce' );
+
+		$name = isset( $_POST['package_name'] ) ? sanitize_text_field( wp_unslash( $_POST['package_name'] ) ) : '';
+		$type = isset( $_POST['package_type'] ) ? sanitize_text_field( wp_unslash( $_POST['package_type'] ) ) : '';
+
+		if ( '' === $name || ! in_array( $type, array( 'Theme', 'Plugin' ), true ) ) {
+			wp_die( esc_html__( 'Enter a package name and select a valid type.', 'messenger-plugin-theme' ) );
+		}
+
+		global $wpdb;
+		$packages_table = $wpdb->prefix . 'messenger_packages';
+		$inserted       = $wpdb->insert(
+			$packages_table,
+			array(
+				'name' => $name,
+				'type' => $type,
+			),
+			array( '%s', '%s' )
+		);
+
+		if ( false === $inserted ) {
+			wp_die( esc_html__( 'The package could not be created.', 'messenger-plugin-theme' ) );
+		}
+
+		$redirect_url = add_query_arg(
+			array(
+				'page'              => 'messenger-admin-options',
+				'package_created'   => '1',
+			),
+			admin_url( 'admin.php' )
+		);
+		wp_safe_redirect( $redirect_url );
+		exit;
 	}
 
 	public function DisplayMainAdmin() {
@@ -109,8 +149,9 @@ class Messenger_Plugin_Theme_Admin {
 
 		$packages_table = $wpdb->prefix . 'messenger_packages';
 		$installs_table = $wpdb->prefix . 'messenger_installs';
+		$releases_table = $wpdb->prefix . 'messenger_package_releases';
 		$packages       = $wpdb->get_results(
-			"SELECT packages.*, (SELECT COUNT(*) FROM `$installs_table` AS installs WHERE installs.package_id = packages.id) AS installs FROM `$packages_table` AS packages ORDER BY packages.name ASC"
+			"SELECT packages.*, (SELECT COUNT(*) FROM `$installs_table` AS installs WHERE installs.package_id = packages.id) AS installs, (SELECT releases.version FROM `$releases_table` AS releases WHERE releases.package_id = packages.id ORDER BY releases.release_date DESC, releases.id DESC LIMIT 1) AS version FROM `$packages_table` AS packages ORDER BY packages.name ASC"
 		);
 		$package_id     = isset( $_GET['package_id'] ) ? sanitize_text_field( wp_unslash( $_GET['package_id'] ) ) : null;
 		$package        = null;
@@ -118,13 +159,16 @@ class Messenger_Plugin_Theme_Admin {
 
 		if ( null !== $package_id ) {
 			$package = $wpdb->get_row(
-				$wpdb->prepare( "SELECT * FROM `$packages_table` WHERE id = %s", $package_id )
+				$wpdb->prepare(
+					"SELECT packages.*, (SELECT releases.version FROM `$releases_table` AS releases WHERE releases.package_id = packages.id ORDER BY releases.release_date DESC, releases.id DESC LIMIT 1) AS version FROM `$packages_table` AS packages WHERE packages.id = %s",
+					$package_id
+				)
 			);
 
 			if ( $package ) {
 				$package_installs = $wpdb->get_results(
 					$wpdb->prepare(
-						"SELECT id, package_id, site, install_key FROM `$installs_table` WHERE package_id = %s ORDER BY install_row_id ASC",
+						"SELECT id, package_id, site, install_key FROM `$installs_table` WHERE package_id = %s ORDER BY id ASC",
 						$package_id
 					)
 				);
@@ -151,7 +195,7 @@ class Messenger_Plugin_Theme_Admin {
 			padding: 0.5em 1.2em;
 			font-size: 1.2em;
 		}
-		a.btn {
+		a.btn, button.btn {
 			margin: 1em;
 			display: inline-block;
 			box-shadow: 0px 1px 2px #000;
@@ -177,6 +221,9 @@ class Messenger_Plugin_Theme_Admin {
 			<?php if ( null === $package_id ) { ?>
 			<div class="messenger-plugin-theme-admin">
 				<h3>Packages</h3>
+				<?php if ( isset( $_GET['package_created'] ) && '1' === $_GET['package_created'] ) { ?>
+					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package created.', 'messenger-plugin-theme' ); ?></p></div>
+				<?php } ?>
 					<div class="messenger-package-container">
 						<table>
 							<tr><th>Name</th><th>Type</th><th>Version</th><th>Installs</th><th></th></tr>
@@ -187,7 +234,21 @@ class Messenger_Plugin_Theme_Admin {
 						} ?>
 						</table>
 					</div>
-					<div><a href="#" class="btn">Create New Package</a></div>
+					<div><button type="button" class="btn" onclick="showNewPackageForm()">Create New Package</button></div>
+					<div id="new-package-form-container" class="new-version-form">
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+							<input type="hidden" name="action" value="messenger_create_package" />
+							<?php wp_nonce_field( 'messenger_create_package', 'messenger_create_package_nonce' ); ?>
+							<div><label for="package-name">Name: </label><input type="text" id="package-name" name="package_name" required /></div>
+							<div><label for="package-type">Type: </label><select id="package-type" name="package_type" required><option value="Theme">Theme</option><option value="Plugin">Plugin</option></select></div>
+							<div><button type="submit">Create Package</button></div>
+						</form>
+					</div>
+					<script>function showNewPackageForm() {
+						const container = document.getElementById('new-package-form-container');
+						container.style.opacity = 1;
+						container.style.maxHeight = '500px';
+					}</script>
 			</div>
 			<?php } elseif ( ! $package ) { ?>
 				<p><?php esc_html_e( 'Package not found.', 'messenger-plugin-theme' ); ?></p>
