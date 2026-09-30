@@ -70,11 +70,42 @@ class Messenger_Plugin_Theme_Activator {
 		dbDelta( $installs_sql );
 		dbDelta( $releases_sql );
 
-		$installs_foreign_key = 'mpt_install_package_' . substr( md5( $installs_table ), 0, 12 );
-		$wpdb->query( "ALTER TABLE `$installs_table` ADD CONSTRAINT `$installs_foreign_key` FOREIGN KEY (package_id) REFERENCES `$packages_table` (id) ON DELETE CASCADE" );
+		$required_tables = array( $packages_table, $installs_table, $releases_table );
+		foreach ( $required_tables as $table ) {
+			$table_exists = $wpdb->get_var(
+				$wpdb->prepare(
+					'SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+					$table
+				)
+			);
+			if ( $table !== $table_exists ) {
+				return;
+			}
+		}
 
-		$releases_foreign_key = 'mpt_release_package_' . substr( md5( $releases_table ), 0, 12 );
-		$wpdb->query( "ALTER TABLE `$releases_table` ADD CONSTRAINT `$releases_foreign_key` FOREIGN KEY (package_id) REFERENCES `$packages_table` (id) ON DELETE CASCADE" );
+		$foreign_keys = array(
+			array( $installs_table, 'mpt_install_package_' . substr( md5( $installs_table ), 0, 12 ) ),
+			array( $releases_table, 'mpt_release_package_' . substr( md5( $releases_table ), 0, 12 ) ),
+		);
+
+		foreach ( $foreign_keys as $foreign_key ) {
+			$table           = $foreign_key[0];
+			$constraint_name = $foreign_key[1];
+			$constraint_exists = $wpdb->get_var(
+				$wpdb->prepare(
+					'SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = %s AND CONSTRAINT_NAME = %s AND CONSTRAINT_TYPE = %s',
+					$table,
+					$constraint_name,
+					'FOREIGN KEY'
+				)
+			);
+
+			if ( ! $constraint_exists && false === $wpdb->query( "ALTER TABLE `$table` ADD CONSTRAINT `$constraint_name` FOREIGN KEY (package_id) REFERENCES `$packages_table` (id) ON DELETE CASCADE" ) ) {
+				return;
+			}
+		}
+
+		update_option( 'messenger_plugin_theme_db_version', MESSENGER_PLUGIN_THEME_DB_VERSION );
 	}
 
 }

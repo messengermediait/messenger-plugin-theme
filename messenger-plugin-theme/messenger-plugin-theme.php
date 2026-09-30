@@ -36,6 +36,7 @@ if ( ! defined( 'WPINC' ) ) {
  * Rename this for your plugin and update it as you release new versions.
  */
 define( 'MESSENGER_PLUGIN_THEME_VERSION', '1.0.0' );
+define( 'MESSENGER_PLUGIN_THEME_DB_VERSION', '1' );
 
 /**
  * The code that runs during plugin activation.
@@ -44,6 +45,19 @@ define( 'MESSENGER_PLUGIN_THEME_VERSION', '1.0.0' );
 function activate_messenger_plugin_theme() {
 	require_once plugin_dir_path( __FILE__ ) . 'includes/class-messenger-plugin-theme-activator.php';
 	Messenger_Plugin_Theme_Activator::activate();
+}
+
+/**
+ * Apply database changes after a plugin update.
+ *
+ * @since    1.0.0
+ */
+function maybe_upgrade_messenger_plugin_theme() {
+	if ( MESSENGER_PLUGIN_THEME_DB_VERSION === get_option( 'messenger_plugin_theme_db_version' ) ) {
+		return;
+	}
+
+	activate_messenger_plugin_theme();
 }
 
 /**
@@ -57,6 +71,7 @@ function deactivate_messenger_plugin_theme() {
 
 register_activation_hook( __FILE__, 'activate_messenger_plugin_theme' );
 register_deactivation_hook( __FILE__, 'deactivate_messenger_plugin_theme' );
+add_action( 'plugins_loaded', 'maybe_upgrade_messenger_plugin_theme' );
 
 /**
  * The core plugin class that is used to define internationalization,
