@@ -144,6 +144,142 @@ class Messenger_Plugin_Theme_Admin {
 		exit;
 	}
 
+	public function handle_publish_package_release() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to publish package releases.', 'messenger-plugin-theme' ) );
+		}
+
+		$package_id = isset( $_POST['package_id'] ) ? absint( $_POST['package_id'] ) : 0;
+		check_admin_referer( 'messenger_publish_release_' . $package_id, 'messenger_publish_release_nonce' );
+
+		$version = isset( $_POST['release_version'] ) ? sanitize_text_field( wp_unslash( $_POST['release_version'] ) ) : '';
+		$notes   = isset( $_POST['release_notes'] ) ? sanitize_textarea_field( wp_unslash( $_POST['release_notes'] ) ) : '';
+		$semver_pattern = '/^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$/';
+
+		if ( ! $package_id || ! preg_match( $semver_pattern, $version ) ) {
+			wp_die( esc_html__( 'Enter a valid semantic version and package.', 'messenger-plugin-theme' ) );
+		}
+
+		$notes_length = function_exists( 'mb_strlen' ) ? mb_strlen( $notes, 'UTF-8' ) : strlen( $notes );
+		if ( $notes_length > 5000 ) {
+			wp_die( esc_html__( 'Release notes must be 5,000 characters or fewer.', 'messenger-plugin-theme' ) );
+		}
+
+		if ( ! isset( $_FILES['release_zip']['error'] ) || UPLOAD_ERR_OK !== $_FILES['release_zip']['error'] ) {
+			wp_die( esc_html__( 'Choose a ZIP file to upload.', 'messenger-plugin-theme' ) );
+		}
+
+		global $wpdb;
+		$packages_table = $wpdb->prefix . 'messenger_packages';
+		$releases_table = $wpdb->prefix . 'messenger_package_releases';
+		$package_exists = $wpdb->get_var(
+			$wpdb->prepare( "SELECT id FROM `$packages_table` WHERE id = %d", $package_id )
+		);
+
+		if ( ! $package_exists ) {
+			wp_die( esc_html__( 'The selected package does not exist.', 'messenger-plugin-theme' ) );
+		}
+
+		$file_path = $this->store_private_release_zip( $_FILES['release_zip'] );
+		if ( is_wp_error( $file_path ) ) {
+			wp_die( esc_html( $file_path->get_error_message() ) );
+		}
+
+		$inserted = $wpdb->insert(
+			$releases_table,
+			array(
+				'package_id'   => $package_id,
+				'version'      => $version,
+				'release_date' => current_time( 'mysql', true ),
+				'release_notes' => $notes,
+				'file_path'    => $file_path,
+			),
+			array( '%d', '%s', '%s', '%s', '%s' )
+		);
+
+		if ( false === $inserted ) {
+			wp_delete_file( $file_path );
+			wp_die( esc_html__( 'The release could not be saved.', 'messenger-plugin-theme' ) );
+		}
+
+		$redirect_url = add_query_arg(
+			array(
+				'page'            => 'messenger-admin-options',
+				'package_id'      => $package_id,
+				'release_created' => '1',
+			),
+			admin_url( 'admin.php' )
+		);
+		wp_safe_redirect( $redirect_url );
+		exit;
+	}
+
+	private function store_private_release_zip( $file ) {
+		if ( ! isset( $file['tmp_name'], $file['name'], $file['size'] ) || ! is_uploaded_file( $file['tmp_name'] ) ) {
+			return new WP_Error( 'invalid_upload', __( 'The uploaded file is invalid.', 'messenger-plugin-theme' ) );
+		}
+
+		if ( 'zip' !== strtolower( pathinfo( $file['name'], PATHINFO_EXTENSION ) ) ) {
+			return new WP_Error( 'invalid_extension', __( 'Only ZIP files can be uploaded.', 'messenger-plugin-theme' ) );
+		}
+
+		$file_handle = fopen( $file['tmp_name'], 'rb' );
+		if ( false === $file_handle ) {
+			return new WP_Error( 'unreadable_upload', __( 'The uploaded file could not be read.', 'messenger-plugin-theme' ) );
+		}
+		$signature = fread( $file_handle, 4 );
+		fclose( $file_handle );
+		if ( ! in_array( $signature, array( "PK\x03\x04", "PK\x05\x06", "PK\x07\x08" ), true ) ) {
+			return new WP_Error( 'invalid_zip', __( 'The uploaded file is not a valid ZIP archive.', 'messenger-plugin-theme' ) );
+		}
+
+		$document_root = isset( $_SERVER['DOCUMENT_ROOT'] ) ? realpath( wp_unslash( $_SERVER['DOCUMENT_ROOT'] ) ) : realpath( ABSPATH );
+		if ( false === $document_root ) {
+			return new WP_Error( 'private_directory_unavailable', __( 'A private upload directory could not be determined.', 'messenger-plugin-theme' ) );
+		}
+
+		$private_parent = dirname( $document_root );
+		if ( $private_parent === $document_root ) {
+			return new WP_Error( 'private_directory_unavailable', __( 'A private upload directory could not be determined.', 'messenger-plugin-theme' ) );
+		}
+
+		$upload_directory = $private_parent . DIRECTORY_SEPARATOR . '.messenger-plugin-theme' . DIRECTORY_SEPARATOR . 'releases';
+		if ( ! wp_mkdir_p( $upload_directory ) ) {
+			return new WP_Error( 'private_directory_unavailable', __( 'The private upload directory could not be created.', 'messenger-plugin-theme' ) );
+		}
+
+		$real_upload_directory = realpath( $upload_directory );
+		$document_root_prefix  = trailingslashit( $document_root );
+		if ( false === $real_upload_directory || $real_upload_directory === $document_root || 0 === strpos( $real_upload_directory, $document_root_prefix ) ) {
+			return new WP_Error( 'public_upload_directory', __( 'The upload directory is not outside the web root.', 'messenger-plugin-theme' ) );
+		}
+
+		@chmod( $real_upload_directory, 0750 );
+		$temporary_handle = fopen( $file['tmp_name'], 'rb' );
+		if ( false === $temporary_handle ) {
+			return new WP_Error( 'unreadable_upload', __( 'The uploaded file could not be read.', 'messenger-plugin-theme' ) );
+		}
+
+		$file_path = $real_upload_directory . DIRECTORY_SEPARATOR . wp_generate_uuid4() . '.zip';
+		$destination_handle = @fopen( $file_path, 'xb' );
+		if ( false === $destination_handle ) {
+			fclose( $temporary_handle );
+			return new WP_Error( 'file_store_failed', __( 'A unique release file could not be created.', 'messenger-plugin-theme' ) );
+		}
+
+		$bytes_copied = stream_copy_to_stream( $temporary_handle, $destination_handle );
+		fclose( $temporary_handle );
+		fclose( $destination_handle );
+
+		if ( false === $bytes_copied || (int) $file['size'] !== $bytes_copied ) {
+			wp_delete_file( $file_path );
+			return new WP_Error( 'file_store_failed', __( 'The release file could not be stored completely.', 'messenger-plugin-theme' ) );
+		}
+
+		@chmod( $file_path, 0640 );
+		return $file_path;
+	}
+
 	public function DisplayMainAdmin() {
 		global $wpdb;
 
@@ -254,6 +390,9 @@ class Messenger_Plugin_Theme_Admin {
 				<p><?php esc_html_e( 'Package not found.', 'messenger-plugin-theme' ); ?></p>
 			<?php } else { ?>
 			<div class="messenger-plugin-theme-admin">
+				<?php if ( isset( $_GET['release_created'] ) && '1' === $_GET['release_created'] ) { ?>
+					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package release published.', 'messenger-plugin-theme' ); ?></p></div>
+				<?php } ?>
 				<h3><?php echo esc_html( $package->name ); ?> - <?php echo esc_html( $package->type ); ?></h3>
 				<div class="messenger-package-container">
 					<p><strong>Version: </strong> <?php echo esc_html( $package->version ); ?></p>
@@ -263,10 +402,14 @@ class Messenger_Plugin_Theme_Admin {
 				<div class="messenger-package-container">
 					<p><strong><button onClick="showNewForm()">Publish New Version...</button></strong></p>
 					<div id="new-version-form-container" class="new-version-form">
-						<form id="new-version-form">
-							<div><label>Version Number: </label><input type="text" id="new-version-number" /></div>
-							<div><label>File: </label><input type="file" id="new-version-zip" /></div>
-							<div><input type="button" value="Publish" /></div>
+						<form id="new-version-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">
+							<input type="hidden" name="action" value="messenger_publish_package_release" />
+							<input type="hidden" name="package_id" value="<?php echo esc_attr( $package->id ); ?>" />
+							<?php wp_nonce_field( 'messenger_publish_release_' . $package->id, 'messenger_publish_release_nonce' ); ?>
+							<div><label for="new-version-number">Version Number: </label><input type="text" id="new-version-number" name="release_version" placeholder="1.0.0" pattern="(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?" required /></div>
+							<div><label for="new-version-notes">Release Notes: </label><textarea id="new-version-notes" name="release_notes" rows="6"></textarea></div>
+							<div><label for="new-version-zip">ZIP File: </label><input type="file" id="new-version-zip" name="release_zip" accept=".zip,application/zip" required /></div>
+							<div><button type="submit">Publish</button></div>
 						</form>
 					</div>
 					<script>function showNewForm() {
