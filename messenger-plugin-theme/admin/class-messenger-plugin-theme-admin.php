@@ -214,6 +214,42 @@ class Messenger_Plugin_Theme_Admin {
 		exit;
 	}
 
+	public function handle_download_package_release() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to download package releases.', 'messenger-plugin-theme' ) );
+		}
+
+		$release_id = isset( $_GET['release_id'] ) ? absint( $_GET['release_id'] ) : 0;
+		check_admin_referer( 'messenger_download_release_' . $release_id );
+
+		global $wpdb;
+		$releases_table = $wpdb->prefix . 'messenger_package_releases';
+		$release = $wpdb->get_row(
+			$wpdb->prepare( "SELECT id, version, file_path FROM `$releases_table` WHERE id = %d", $release_id )
+		);
+
+		if ( ! $release ) {
+			wp_die( esc_html__( 'The requested release could not be found.', 'messenger-plugin-theme' ) );
+		}
+
+		$private_directory = $this->get_private_release_directory();
+		if ( is_wp_error( $private_directory ) ) {
+			wp_die( esc_html( $private_directory->get_error_message() ) );
+		}
+
+		$file_path = realpath( $release->file_path );
+		if ( false === $file_path || dirname( $file_path ) !== $private_directory || ! is_file( $file_path ) || ! is_readable( $file_path ) || 'zip' !== strtolower( pathinfo( $file_path, PATHINFO_EXTENSION ) ) ) {
+			wp_die( esc_html__( 'The release file is unavailable.', 'messenger-plugin-theme' ) );
+		}
+
+		nocache_headers();
+		header( 'Content-Type: application/zip' );
+		header( 'Content-Disposition: attachment; filename="' . sanitize_file_name( 'package-' . $release->id . '-v' . $release->version . '.zip' ) . '"' );
+		header( 'Content-Length: ' . filesize( $file_path ) );
+		readfile( $file_path );
+		exit;
+	}
+
 	private function store_private_release_zip( $file ) {
 		if ( ! isset( $file['tmp_name'], $file['name'], $file['size'] ) || ! is_uploaded_file( $file['tmp_name'] ) ) {
 			return new WP_Error( 'invalid_upload', __( 'The uploaded file is invalid.', 'messenger-plugin-theme' ) );
@@ -233,25 +269,9 @@ class Messenger_Plugin_Theme_Admin {
 			return new WP_Error( 'invalid_zip', __( 'The uploaded file is not a valid ZIP archive.', 'messenger-plugin-theme' ) );
 		}
 
-		$document_root = isset( $_SERVER['DOCUMENT_ROOT'] ) ? realpath( wp_unslash( $_SERVER['DOCUMENT_ROOT'] ) ) : realpath( ABSPATH );
-		if ( false === $document_root ) {
-			return new WP_Error( 'private_directory_unavailable', __( 'A private upload directory could not be determined.', 'messenger-plugin-theme' ) );
-		}
-
-		$private_parent = dirname( $document_root );
-		if ( $private_parent === $document_root ) {
-			return new WP_Error( 'private_directory_unavailable', __( 'A private upload directory could not be determined.', 'messenger-plugin-theme' ) );
-		}
-
-		$upload_directory = $private_parent . DIRECTORY_SEPARATOR . '.messenger-plugin-theme' . DIRECTORY_SEPARATOR . 'releases';
-		if ( ! wp_mkdir_p( $upload_directory ) ) {
-			return new WP_Error( 'private_directory_unavailable', __( 'The private upload directory could not be created.', 'messenger-plugin-theme' ) );
-		}
-
-		$real_upload_directory = realpath( $upload_directory );
-		$document_root_prefix  = trailingslashit( $document_root );
-		if ( false === $real_upload_directory || $real_upload_directory === $document_root || 0 === strpos( $real_upload_directory, $document_root_prefix ) ) {
-			return new WP_Error( 'public_upload_directory', __( 'The upload directory is not outside the web root.', 'messenger-plugin-theme' ) );
+		$real_upload_directory = $this->get_private_release_directory( true );
+		if ( is_wp_error( $real_upload_directory ) ) {
+			return $real_upload_directory;
 		}
 
 		@chmod( $real_upload_directory, 0750 );
@@ -280,6 +300,31 @@ class Messenger_Plugin_Theme_Admin {
 		return $file_path;
 	}
 
+	private function get_private_release_directory( $create = false ) {
+		$document_root = isset( $_SERVER['DOCUMENT_ROOT'] ) ? realpath( wp_unslash( $_SERVER['DOCUMENT_ROOT'] ) ) : realpath( ABSPATH );
+		if ( false === $document_root ) {
+			return new WP_Error( 'private_directory_unavailable', __( 'A private upload directory could not be determined.', 'messenger-plugin-theme' ) );
+		}
+
+		$private_parent = dirname( $document_root );
+		if ( $private_parent === $document_root ) {
+			return new WP_Error( 'private_directory_unavailable', __( 'A private upload directory could not be determined.', 'messenger-plugin-theme' ) );
+		}
+
+		$directory = $private_parent . DIRECTORY_SEPARATOR . '.messenger-plugin-theme' . DIRECTORY_SEPARATOR . 'releases';
+		if ( $create && ! wp_mkdir_p( $directory ) ) {
+			return new WP_Error( 'private_directory_unavailable', __( 'The private upload directory could not be created.', 'messenger-plugin-theme' ) );
+		}
+
+		$real_directory = realpath( $directory );
+		$document_root_prefix = trailingslashit( $document_root );
+		if ( false === $real_directory || $real_directory === $document_root || 0 === strpos( $real_directory, $document_root_prefix ) ) {
+			return new WP_Error( 'public_upload_directory', __( 'The upload directory is not outside the web root.', 'messenger-plugin-theme' ) );
+		}
+
+		return $real_directory;
+	}
+
 	public function DisplayMainAdmin() {
 		global $wpdb;
 
@@ -291,6 +336,7 @@ class Messenger_Plugin_Theme_Admin {
 		);
 		$package_id     = isset( $_GET['package_id'] ) ? sanitize_text_field( wp_unslash( $_GET['package_id'] ) ) : null;
 		$package        = null;
+		$latest_release  = null;
 		$package_installs = array();
 
 		if ( null !== $package_id ) {
@@ -302,6 +348,12 @@ class Messenger_Plugin_Theme_Admin {
 			);
 
 			if ( $package ) {
+				$latest_release = $wpdb->get_row(
+					$wpdb->prepare(
+						"SELECT id, version, release_notes, file_path FROM `$releases_table` WHERE package_id = %d ORDER BY release_date DESC, id DESC LIMIT 1",
+						absint( $package_id )
+					)
+				);
 				$package_installs = $wpdb->get_results(
 					$wpdb->prepare(
 						"SELECT id, package_id, site, install_key FROM `$installs_table` WHERE package_id = %s ORDER BY id ASC",
@@ -314,7 +366,6 @@ class Messenger_Plugin_Theme_Admin {
 		<style>
 			.messenger-package-container table {
 			border: 1px solid rgba(0, 0, 0, 0.5);
-			border-radius: 0.5em;
 			width: 100%;
 			box-shadow: 0px 1px 4px rgba(128, 128, 128, 0.5);
 		}
@@ -396,7 +447,12 @@ class Messenger_Plugin_Theme_Admin {
 				<h3><?php echo esc_html( $package->name ); ?> - <?php echo esc_html( $package->type ); ?></h3>
 				<div class="messenger-package-container">
 					<p><strong>Version: </strong> <?php echo esc_html( $package->version ); ?></p>
-					<p><a href="#" download class="btn">Download Zip</a></p>
+					<?php if ( $latest_release ) { ?>
+						<div class="release-notes"><?php echo wp_kses_post( wpautop( esc_html( $latest_release->release_notes ) ) ); ?></div>
+						<p><a href="<?php echo esc_url( wp_nonce_url( add_query_arg( array( 'action' => 'messenger_download_package_release', 'release_id' => $latest_release->id ), admin_url( 'admin-post.php' ) ), 'messenger_download_release_' . $latest_release->id ) ); ?>" class="btn">Download Zip</a></p>
+					<?php } else { ?>
+						<p><?php esc_html_e( 'No release has been published yet.', 'messenger-plugin-theme' ); ?></p>
+					<?php } ?>
 					<p><em><a href="#">Show previous versions...</a></em></p>
 				</div>
 				<div class="messenger-package-container">
