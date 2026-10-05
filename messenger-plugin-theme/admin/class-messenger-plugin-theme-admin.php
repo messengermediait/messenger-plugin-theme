@@ -214,6 +214,57 @@ class Messenger_Plugin_Theme_Admin {
 		exit;
 	}
 
+	public function handle_create_package_installation() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to create package installations.', 'messenger-plugin-theme' ) );
+		}
+
+		$package_id = isset( $_POST['package_id'] ) ? absint( $_POST['package_id'] ) : 0;
+		check_admin_referer( 'messenger_create_installation_' . $package_id, 'messenger_create_installation_nonce' );
+
+		$site = isset( $_POST['site_url'] ) ? esc_url_raw( wp_unslash( $_POST['site_url'] ) ) : '';
+		if ( ! $package_id || ! filter_var( $site, FILTER_VALIDATE_URL ) ) {
+			wp_die( esc_html__( 'Enter a valid site URL and package.', 'messenger-plugin-theme' ) );
+		}
+
+		global $wpdb;
+		$packages_table = $wpdb->prefix . 'messenger_packages';
+		$installs_table = $wpdb->prefix . 'messenger_installs';
+		$package_exists = $wpdb->get_var(
+			$wpdb->prepare( "SELECT id FROM `$packages_table` WHERE id = %d", $package_id )
+		);
+
+		if ( ! $package_exists ) {
+			wp_die( esc_html__( 'The selected package does not exist.', 'messenger-plugin-theme' ) );
+		}
+
+		$install_key = wp_generate_password( 64, true );
+		$inserted = $wpdb->insert(
+			$installs_table,
+			array(
+				'package_id' => $package_id,
+				'site' => $site,
+				'install_key' => $install_key,
+			),
+			array( '%d', '%s', '%s' )
+		);
+
+		if ( false === $inserted ) {
+			wp_die( esc_html__( 'The package installation could not be created.', 'messenger-plugin-theme' ) );
+		}
+
+		$redirect_url = add_query_arg(
+			array(
+				'page'              => 'messenger-admin-options',
+				'package_id'        => $package_id,
+				'installation_added' => '1',
+			),
+			admin_url( 'admin.php' )
+		);
+		wp_safe_redirect( $redirect_url );
+		exit;
+	}
+
 	public function handle_download_package_release() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'You are not allowed to download package releases.', 'messenger-plugin-theme' ) );
@@ -444,6 +495,9 @@ class Messenger_Plugin_Theme_Admin {
 				<?php if ( isset( $_GET['release_created'] ) && '1' === $_GET['release_created'] ) { ?>
 					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package release published.', 'messenger-plugin-theme' ); ?></p></div>
 				<?php } ?>
+				<?php if ( isset( $_GET['installation_added'] ) && '1' === $_GET['installation_added'] ) { ?>
+					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package installation created.', 'messenger-plugin-theme' ); ?></p></div>
+				<?php } ?>
 				<h3><?php echo esc_html( $package->name ); ?> - <?php echo esc_html( $package->type ); ?></h3>
 				<div class="messenger-package-container">
 					<p><strong>Version: </strong> <?php echo esc_html( $package->version ); ?></p>
@@ -474,15 +528,33 @@ class Messenger_Plugin_Theme_Admin {
 						container.style.maxHeight = '500px';
 					}</script>
 				</div>
-				<h4>Installations</h4>
+				<div class="messenger-package-container">
+					<h4>Installations <button type="button" class="btn" onclick="showNewInstallationForm()">Create New Installation</button></h4>
+					<div id="new-installation-form-container" class="new-version-form">
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+							<input type="hidden" name="action" value="messenger_create_package_installation" />
+							<input type="hidden" name="package_id" value="<?php echo esc_attr( $package->id ); ?>" />
+							<?php wp_nonce_field( 'messenger_create_installation_' . $package->id, 'messenger_create_installation_nonce' ); ?>
+							<div><label for="installation-site-url">Site URL: </label><input type="url" id="installation-site-url" name="site_url" placeholder="https://example.com" required /></div>
+							<div><button type="submit">Create Installation</button></div>
+						</form>
+					</div>
+					<script>function showNewInstallationForm() {
+						const container = document.getElementById('new-installation-form-container');
+						container.style.opacity = 1;
+						container.style.maxHeight = '500px';
+					}</script>
+				</div>
 				<div class="messenger-package-container">
 					<table>
 						<tr><th>Site</th><th>Key</th><th>Actions</th></tr>
-					<?php
-						foreach ( $package_installs as $install ) { ?>
-							<tr><td><?php echo esc_html( $install->site ); ?></td><td><?php echo esc_html( $install->install_key ); ?></td><td><a href="#" class="btn">Edit</a><a href="#" class="btn btn-warn">Delete</a></td></tr>
-						<?php }
-					?>
+						<?php if ( empty( $package_installs ) ) { ?>
+							<tr><td colspan="3">No package installations currently exist</td></tr>
+						<?php } else { ?>
+							<?php foreach ( $package_installs as $install ) { ?>
+								<tr><td><?php echo esc_html( $install->site ); ?></td><td><?php echo esc_html( $install->install_key ); ?></td><td><a href="#" class="btn">Edit</a><a href="#" class="btn btn-warn">Delete</a></td></tr>
+							<?php } ?>
+						<?php } ?>
 					</table>
 				</div>
 			</div>

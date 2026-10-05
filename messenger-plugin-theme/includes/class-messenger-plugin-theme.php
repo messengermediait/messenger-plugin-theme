@@ -158,6 +158,7 @@ class Messenger_Plugin_Theme {
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
 		$this->loader->add_action('admin_menu', $plugin_admin, 'setup_menu' );
 		$this->loader->add_action( 'admin_post_messenger_create_package', $plugin_admin, 'handle_create_package' );
+		$this->loader->add_action( 'admin_post_messenger_create_package_installation', $plugin_admin, 'handle_create_package_installation' );
 		$this->loader->add_action( 'admin_post_messenger_publish_package_release', $plugin_admin, 'handle_publish_package_release' );
 		$this->loader->add_action( 'admin_post_messenger_download_package_release', $plugin_admin, 'handle_download_package_release' );
 
