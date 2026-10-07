@@ -122,6 +122,11 @@ class Messenger_Plugin_Theme {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-messenger-plugin-theme-public.php';
 
+		/**
+		 * The public REST API for package update information and downloads.
+		 */
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-messenger-plugin-theme-api.php';
+
 		$this->loader = new Messenger_Plugin_Theme_Loader();
 
 	}
@@ -161,6 +166,9 @@ class Messenger_Plugin_Theme {
 		$this->loader->add_action( 'admin_post_messenger_create_package_installation', $plugin_admin, 'handle_create_package_installation' );
 		$this->loader->add_action( 'admin_post_messenger_publish_package_release', $plugin_admin, 'handle_publish_package_release' );
 		$this->loader->add_action( 'admin_post_messenger_download_package_release', $plugin_admin, 'handle_download_package_release' );
+
+		$plugin_api = new Messenger_Plugin_Theme_API();
+		$this->loader->add_action( 'rest_api_init', $plugin_api, 'register_routes' );
 
 	}
 

@@ -529,6 +529,7 @@ class Messenger_Plugin_Theme_Admin {
 					}</script>
 				</div>
 				<div class="messenger-package-container">
+					<p><strong>Package API Endpoint:</strong> <a href="<?php echo esc_url( rest_url( 'messenger-plugin-theme/v1/package/' . $package->id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( rest_url( 'messenger-plugin-theme/v1/package/' . $package->id ) ); ?></a></p>
 					<h4>Installations <button type="button" class="btn" onclick="showNewInstallationForm()">Create New Installation</button></h4>
 					<div id="new-installation-form-container" class="new-version-form">
 						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
