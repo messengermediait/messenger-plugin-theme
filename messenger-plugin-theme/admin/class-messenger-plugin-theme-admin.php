@@ -154,6 +154,44 @@ class Messenger_Plugin_Theme_Admin {
 		exit;
 	}
 
+	public function handle_delete_package() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to delete packages.', 'messenger-plugin-theme' ) );
+		}
+
+		$package_id = isset( $_POST['package_id'] ) ? absint( $_POST['package_id'] ) : 0;
+		check_admin_referer( 'messenger_delete_package_' . $package_id, 'messenger_delete_package_nonce' );
+
+		if ( ! $package_id ) {
+			wp_die( esc_html__( 'The selected package does not exist.', 'messenger-plugin-theme' ) );
+		}
+
+		global $wpdb;
+		$packages_table = $wpdb->prefix . 'messenger_packages';
+		$releases_table = $wpdb->prefix . 'messenger_package_releases';
+		$release_files = $wpdb->get_col(
+			$wpdb->prepare( "SELECT file_path FROM `$releases_table` WHERE package_id = %d", $package_id )
+		);
+
+		if ( false === $wpdb->delete( $packages_table, array( 'id' => $package_id ), array( '%d' ) ) ) {
+			wp_die( esc_html__( 'The package could not be deleted.', 'messenger-plugin-theme' ) );
+		}
+
+		foreach ( $release_files as $release_file ) {
+			wp_delete_file( $release_file );
+		}
+
+		$redirect_url = add_query_arg(
+			array(
+				'page' => 'messenger-admin-options',
+				'package_deleted' => '1',
+			),
+			admin_url( 'admin.php' )
+		);
+		wp_safe_redirect( $redirect_url );
+		exit;
+	}
+
 	public function handle_publish_package_release() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'You are not allowed to publish package releases.', 'messenger-plugin-theme' ) );
@@ -472,12 +510,15 @@ class Messenger_Plugin_Theme_Admin {
 				<?php if ( isset( $_GET['package_created'] ) && '1' === $_GET['package_created'] ) { ?>
 					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package created.', 'messenger-plugin-theme' ); ?></p></div>
 				<?php } ?>
+				<?php if ( isset( $_GET['package_deleted'] ) && '1' === $_GET['package_deleted'] ) { ?>
+					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package deleted.', 'messenger-plugin-theme' ); ?></p></div>
+				<?php } ?>
 					<div class="messenger-package-container">
 						<table>
-							<tr><th>Name</th><th>Type</th><th>Version</th><th>Installs</th><th></th></tr>
+							<tr><th>Name</th><th>Slug</th><th>Type</th><th>Version</th><th>Installs</th><th>Actions</th></tr>
 						<?php
 						foreach ( $packages as $package_item ) { ?>
-							<tr><td><?php echo esc_html( $package_item->name ); ?></td><td><?php echo esc_html( $package_item->type ); ?></td><td><?php echo esc_html( $package_item->version ); ?></td><td><?php echo esc_html( $package_item->installs ); ?></td><td><a href="?page=messenger-admin-options&amp;package_id=<?php echo rawurlencode( $package_item->id ); ?>" class="btn">View</a></td></tr>
+							<tr><td><?php echo esc_html( $package_item->name ); ?></td><td><?php echo esc_html( $package_item->slug ); ?></td><td><?php echo esc_html( $package_item->type ); ?></td><td><?php echo esc_html( $package_item->version ); ?></td><td><?php echo esc_html( $package_item->installs ); ?></td><td><a href="?page=messenger-admin-options&amp;package_id=<?php echo rawurlencode( $package_item->id ); ?>" class="btn">View</a><form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline"><input type="hidden" name="action" value="messenger_delete_package" /><input type="hidden" name="package_id" value="<?php echo esc_attr( $package_item->id ); ?>" /><?php wp_nonce_field( 'messenger_delete_package_' . $package_item->id, 'messenger_delete_package_nonce' ); ?><button type="submit" class="btn btn-warn" onclick="return confirm('<?php echo esc_js( sprintf( __( 'Delete package %s and all associated releases and installations?', 'messenger-plugin-theme' ), $package_item->name ) ); ?>')">Delete</button></form></td></tr>
 						<?php
 						} ?>
 						</table>
@@ -488,6 +529,7 @@ class Messenger_Plugin_Theme_Admin {
 							<input type="hidden" name="action" value="messenger_create_package" />
 							<?php wp_nonce_field( 'messenger_create_package', 'messenger_create_package_nonce' ); ?>
 							<div><label for="package-name">Name: </label><input type="text" id="package-name" name="package_name" required /></div>
+							<div><label for="package-slug">Slug: </label><input type="text" id="package-slug" name="package_slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="my-package" required /></div>
 							<div><label for="package-type">Type: </label><select id="package-type" name="package_type" required><option value="Theme">Theme</option><option value="Plugin">Plugin</option></select></div>
 							<div><button type="submit">Create Package</button></div>
 						</form>
