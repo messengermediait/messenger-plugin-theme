@@ -13,7 +13,7 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 	public function register_routes() {
 		register_rest_route(
 			'messenger-plugin-theme/v1',
-			'/package/(?P<package_id>\d+)',
+			'/package/(?P<package_slug>[a-z0-9]+(?:-[a-z0-9]+)*)',
 			array(
 				'methods' => WP_REST_Server::READABLE,
 				'callback' => array( $this, 'get_package_update' ),
@@ -23,7 +23,7 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 
 		register_rest_route(
 			'messenger-plugin-theme/v1',
-			'/package/(?P<package_id>\d+)/details',
+			'/package/(?P<package_slug>[a-z0-9]+(?:-[a-z0-9]+)*)/details',
 			array(
 				'methods' => WP_REST_Server::READABLE,
 				'callback' => array( $this, 'get_package_details' ),
@@ -33,7 +33,7 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 
 		register_rest_route(
 			'messenger-plugin-theme/v1',
-			'/package/(?P<package_id>\d+)/download',
+			'/package/(?P<package_slug>[a-z0-9]+(?:-[a-z0-9]+)*)/download',
 			array(
 				'methods' => WP_REST_Server::READABLE,
 				'callback' => array( $this, 'download_package_release' ),
@@ -49,22 +49,22 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function get_package_update( WP_REST_Request $request ) {
-		$package_id = absint( $request['package_id'] );
-		$package = $this->get_package( $package_id );
+		$package_slug = sanitize_text_field( $request['package_slug'] );
+		$package = $this->get_package( $package_slug );
 		if ( is_wp_error( $package ) ) {
 			return $package;
 		}
 
-		$latest_release = $this->get_latest_release( $package_id );
+		$latest_release = $this->get_latest_release( $package->id );
 		if ( is_wp_error( $latest_release ) ) {
 			return $latest_release;
 		}
 
 		$download_url = rest_url(
-			'messenger-plugin-theme/v1/package/' . $package_id . '/download'
+			'messenger-plugin-theme/v1/package/' . $package_slug . '/download'
 		);
 		$details_url = rest_url(
-			'messenger-plugin-theme/v1/package/' . $package_id . '/details'
+			'messenger-plugin-theme/v1/package/' . $package_slug . '/details'
 		);
 
 		$data = array(
@@ -90,20 +90,20 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function get_package_details( WP_REST_Request $request ) {
-		$package_id = absint( $request['package_id'] );
-		$package = $this->get_package( $package_id );
+		$package_slug = sanitize_text_field( $request['package_slug'] );
+		$package = $this->get_package( $package_slug );
 		if ( is_wp_error( $package ) ) {
 			return $package;
 		}
 
-		$latest_release = $this->get_latest_release( $package_id );
+		$latest_release = $this->get_latest_release( $package->id );
 		if ( is_wp_error( $latest_release ) ) {
 			return $latest_release;
 		}
 
 		return new WP_REST_Response(
 			array(
-				'package_id' => $package_id,
+				'package_slug' => $package_slug,
 				'version' => $latest_release->version,
 				'release_notes' => $latest_release->release_notes,
 			),
@@ -123,13 +123,21 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 			return false;
 		}
 
-		$package_id = absint( $request['package_id'] );
+		$package_slug = sanitize_text_field( $request['package_slug'] );
 		global $wpdb;
+		$packages_table = $wpdb->prefix . 'messenger_packages';
 		$installs_table = $wpdb->prefix . 'messenger_installs';
+		$package = $wpdb->get_row(
+			$wpdb->prepare( "SELECT id FROM `$packages_table` WHERE slug = %s", $package_slug )
+		);
+		if ( empty( $package ) ) {
+			return false;
+		}
+
 		$install = $wpdb->get_row(
 			$wpdb->prepare(
 				"SELECT install_key FROM `$installs_table` WHERE package_id = %d AND install_key = %s LIMIT 1",
-				$package_id,
+				$package->id,
 				$matches[1]
 			)
 		);
@@ -150,8 +158,13 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 	 * @return WP_REST_Response
 	 */
 	public function download_package_release( WP_REST_Request $request ) {
-		$package_id = absint( $request['package_id'] );
-		$latest_release = $this->get_latest_release( $package_id );
+		$package_slug = sanitize_text_field( $request['package_slug'] );
+		$package = $this->get_package( $package_slug );
+		if ( is_wp_error( $package ) ) {
+			return $package;
+		}
+
+		$latest_release = $this->get_latest_release( $package->id );
 		if ( is_wp_error( $latest_release ) ) {
 			return $latest_release;
 		}
@@ -174,7 +187,7 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 
 		nocache_headers();
 		header( 'Content-Type: application/zip' );
-		header( 'Content-Disposition: attachment; filename="' . sanitize_file_name( 'package-' . $package_id . '-v' . $latest_release->version . '.zip' ) . '"' );
+		header( 'Content-Disposition: attachment; filename="' . sanitize_file_name( 'package-' . $package->id . '-v' . $latest_release->version . '.zip' ) . '"' );
 		header( 'Content-Length: ' . filesize( $file_path ) );
 		readfile( $file_path );
 		exit;
@@ -183,14 +196,14 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 	/**
 	 * Get a package record.
 	 *
-	 * @param int $package_id Package ID.
+	 * @param string $package_slug Package slug.
 	 * @return object|WP_Error
 	 */
-	private function get_package( $package_id ) {
+	private function get_package( $package_slug ) {
 		global $wpdb;
 		$packages_table = $wpdb->prefix . 'messenger_packages';
 		$package = $wpdb->get_row(
-			$wpdb->prepare( "SELECT id, name, type FROM `$packages_table` WHERE id = %d", $package_id )
+			$wpdb->prepare( "SELECT id, name, type, slug FROM `$packages_table` WHERE slug = %s", $package_slug )
 		);
 
 		if ( ! $package ) {

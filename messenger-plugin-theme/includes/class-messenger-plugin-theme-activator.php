@@ -43,7 +43,9 @@ class Messenger_Plugin_Theme_Activator {
 			id mediumint(9) NOT NULL AUTO_INCREMENT,
 			name varchar(255) NOT NULL,
 			type varchar(50) NOT NULL,
-			UNIQUE KEY id (id)
+			slug varchar(255) NOT NULL,
+			UNIQUE KEY id (id),
+			UNIQUE KEY slug (slug)
 		) ENGINE=InnoDB $charset_collate;";
 
 		$installs_sql = "CREATE TABLE $installs_table (
@@ -69,6 +71,51 @@ class Messenger_Plugin_Theme_Activator {
 		dbDelta( $packages_sql );
 		dbDelta( $installs_sql );
 		dbDelta( $releases_sql );
+
+		$packages_slug_column = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s',
+				$packages_table,
+				'slug'
+			)
+		);
+
+		if ( ! $packages_slug_column ) {
+			if ( false === $wpdb->query( "ALTER TABLE `$packages_table` ADD COLUMN slug varchar(255) NULL AFTER type" ) ) {
+				return;
+			}
+
+			$package_rows = $wpdb->get_results(
+				$wpdb->prepare( "SELECT id, name FROM `$packages_table` ORDER BY id ASC", array() )
+			);
+			foreach ( $package_rows as $package ) {
+				$slug = sanitize_title( $package->name );
+				if ( ! $slug ) {
+					$slug = 'package-' . $package->id;
+				}
+
+				$existing_slug = $wpdb->get_var(
+					$wpdb->prepare( "SELECT slug FROM `$packages_table` WHERE slug = %s", $slug )
+				);
+				if ( $existing_slug ) {
+					$slug = $slug . '-' . $package->id;
+				}
+
+				$wpdb->update(
+					$packages_table,
+					array( 'slug' => $slug ),
+					array( 'id' => $package->id ),
+					array( '%s', '%d' )
+				);
+			}
+
+			if ( false === $wpdb->query( "ALTER TABLE `$packages_table` MODIFY slug varchar(255) NOT NULL" ) ) {
+				return;
+			}
+			if ( false === $wpdb->query( "ALTER TABLE `$packages_table` ADD UNIQUE KEY slug (slug)" ) ) {
+				return;
+			}
+		}
 
 		$required_tables = array( $packages_table, $installs_table, $releases_table );
 		foreach ( $required_tables as $table ) {

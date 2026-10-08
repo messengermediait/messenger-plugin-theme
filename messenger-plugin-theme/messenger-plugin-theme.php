@@ -36,7 +36,7 @@ if ( ! defined( 'WPINC' ) ) {
  * Rename this for your plugin and update it as you release new versions.
  */
 define( 'MESSENGER_PLUGIN_THEME_VERSION', '1.0.0' );
-define( 'MESSENGER_PLUGIN_THEME_DB_VERSION', '1' );
+define( 'MESSENGER_PLUGIN_THEME_DB_VERSION', '2' );
 
 /**
  * The code that runs during plugin activation.

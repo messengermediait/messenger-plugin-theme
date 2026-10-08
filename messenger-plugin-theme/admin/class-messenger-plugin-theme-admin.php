@@ -113,20 +113,30 @@ class Messenger_Plugin_Theme_Admin {
 
 		$name = isset( $_POST['package_name'] ) ? sanitize_text_field( wp_unslash( $_POST['package_name'] ) ) : '';
 		$type = isset( $_POST['package_type'] ) ? sanitize_text_field( wp_unslash( $_POST['package_type'] ) ) : '';
+		$slug = isset( $_POST['package_slug'] ) ? sanitize_text_field( wp_unslash( $_POST['package_slug'] ) ) : '';
+		$slug_pattern = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/';
 
-		if ( '' === $name || ! in_array( $type, array( 'Theme', 'Plugin' ), true ) ) {
-			wp_die( esc_html__( 'Enter a package name and select a valid type.', 'messenger-plugin-theme' ) );
+		if ( '' === $name || ! in_array( $type, array( 'Theme', 'Plugin' ), true ) || ! preg_match( $slug_pattern, $slug ) ) {
+			wp_die( esc_html__( 'Enter a package name, type, and a lowercase hyphen-separated slug.', 'messenger-plugin-theme' ) );
 		}
 
 		global $wpdb;
 		$packages_table = $wpdb->prefix . 'messenger_packages';
-		$inserted       = $wpdb->insert(
+		$duplicate_slug = $wpdb->get_var(
+			$wpdb->prepare( "SELECT slug FROM `$packages_table` WHERE slug = %s", $slug )
+		);
+		if ( $duplicate_slug ) {
+			wp_die( esc_html__( 'A package with this slug already exists.', 'messenger-plugin-theme' ) );
+		}
+
+		$inserted = $wpdb->insert(
 			$packages_table,
 			array(
 				'name' => $name,
 				'type' => $type,
+				'slug' => $slug,
 			),
-			array( '%s', '%s' )
+			array( '%s', '%s', '%s' )
 		);
 
 		if ( false === $inserted ) {
@@ -500,6 +510,7 @@ class Messenger_Plugin_Theme_Admin {
 				<?php } ?>
 				<h3><?php echo esc_html( $package->name ); ?> - <?php echo esc_html( $package->type ); ?></h3>
 				<div class="messenger-package-container">
+					<p><strong>Slug:</strong> <?php echo esc_html( $package->slug ); ?></p>
 					<p><strong>Version: </strong> <?php echo esc_html( $package->version ); ?></p>
 					<?php if ( $latest_release ) { ?>
 						<div class="release-notes"><?php echo wp_kses_post( wpautop( esc_html( $latest_release->release_notes ) ) ); ?></div>
@@ -529,7 +540,7 @@ class Messenger_Plugin_Theme_Admin {
 					}</script>
 				</div>
 				<div class="messenger-package-container">
-					<p><strong>Package API Endpoint:</strong> <a href="<?php echo esc_url( rest_url( 'messenger-plugin-theme/v1/package/' . $package->id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( rest_url( 'messenger-plugin-theme/v1/package/' . $package->id ) ); ?></a></p>
+					<p><strong>Package API Endpoint:</strong> <a href="<?php echo esc_url( rest_url( 'messenger-plugin-theme/v1/package/' . $package->slug ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( rest_url( 'messenger-plugin-theme/v1/package/' . $package->slug ) ); ?></a></p>
 					<h4>Installations <button type="button" class="btn" onclick="showNewInstallationForm()">Create New Installation</button></h4>
 					<div id="new-installation-form-container" class="new-version-form">
 						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
