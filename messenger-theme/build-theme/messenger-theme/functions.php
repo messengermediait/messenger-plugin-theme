@@ -268,6 +268,19 @@ if ( ! function_exists( 'messenger_theme_body_open' ) ) {
 
 add_filter( 'site_transient_update_themes', 'messenger_theme_check_for_updates' );
 add_filter( 'upgrader_pre_download', 'messenger_theme_download_update_package', 10, 4 );
+add_action( 'admin_notices', 'messenger_theme_missing_update_key_notice' );
+add_action( 'network_admin_notices', 'messenger_theme_missing_update_key_notice' );
+
+function messenger_theme_update_api_base_url() {
+	$domain = get_option( 'messenger_update_domain', 'dev.messenger.com.au' );
+	$domain = strtolower( trim( (string) $domain ) );
+
+	if ( '' === $domain ) {
+		$domain = 'dev.messenger.com.au';
+	}
+
+	return 'https://' . $domain . '/wp-json/messenger-plugin-theme/v1/package/messenger-theme';
+}
 
 function messenger_theme_check_for_updates( $transient ) {
 	if ( ! is_object( $transient ) ) {
@@ -278,7 +291,7 @@ function messenger_theme_check_for_updates( $transient ) {
 	$theme = wp_get_theme();
 	$version = $theme->get( 'Version' );
 	$remote = wp_remote_get(
-		'https://dev.messenger.com.au/wp-json/messenger-plugin-theme/v1/package/messenger-theme',
+		messenger_theme_update_api_base_url(),
 		array(
 			'timeout' => 10,
 			'headers' => array(
@@ -325,20 +338,27 @@ function messenger_theme_check_for_updates( $transient ) {
 
 function messenger_theme_download_update_package( $reply, $package, $upgrader, $hook_extra ) {
 	$package_url = wp_parse_url( $package );
+	$update_domain = get_option( 'messenger_update_domain', 'dev.messenger.com.au' );
+	$update_domain = strtolower( trim( (string) $update_domain ) );
+	$update_key = get_option( 'messenger_update_key', '' );
+	if ( '' === $update_domain ) {
+		$update_domain = 'dev.messenger.com.au';
+	}
+
 	if (
 		false !== $reply
 		|| ! is_array( $package_url )
 		|| 'https' !== ( $package_url['scheme'] ?? '' )
-		|| 'dev.messenger.com.au' !== ( $package_url['host'] ?? '' )
+		|| $update_domain !== strtolower( $package_url['host'] ?? '' )
 		|| '/wp-json/messenger-plugin-theme/v1/package/messenger-theme/download' !== ( $package_url['path'] ?? '' )
 	) {
 		return $reply;
 	}
 
-	if ( ! defined( 'MESSENGER_THEME_INSTALL_KEY' ) || '' === MESSENGER_THEME_INSTALL_KEY ) {
+	if ( ! is_string( $update_key ) || '' === trim( $update_key ) ) {
 		return new WP_Error(
 			'messenger_theme_install_key_missing',
-			__( 'Configure MESSENGER_THEME_INSTALL_KEY with this site installation key before updating the Messenger theme.', 'messenger-theme' )
+			__( 'Set the Messenger theme installation key in Messenger > Settings before updating the theme.', 'messenger-theme' )
 		);
 	}
 
@@ -355,7 +375,7 @@ function messenger_theme_download_update_package( $reply, $package, $upgrader, $
 			'filename' => $temp_file,
 			'headers' => array(
 				'Accept' => 'application/zip',
-				'Authorization' => 'Bearer ' . MESSENGER_THEME_INSTALL_KEY,
+				'Authorization' => 'Bearer ' . $update_key,
 			),
 		)
 	);
@@ -371,6 +391,26 @@ function messenger_theme_download_update_package( $reply, $package, $upgrader, $
 	}
 
 	return $temp_file;
+}
+
+function messenger_theme_missing_update_key_notice() {
+	global $pagenow;
+
+	if ( ! in_array( $pagenow, array( 'themes.php', 'update-core.php' ), true ) ) {
+		return;
+	}
+
+	$update_key = get_option( 'messenger_update_key', '' );
+	if ( is_string( $update_key ) && '' !== trim( $update_key ) ) {
+		return;
+	}
+
+	$settings_url = add_query_arg( 'page', 'messenger-theme-settings', admin_url( 'admin.php' ) );
+	?>
+	<div class="notice notice-error">
+		<p><?php echo wp_kses_post( sprintf( __( 'Messenger theme updates are configured, but the installation key is missing. Add it in <a href="%s">Messenger Settings</a> before installing updates.', 'messenger-theme' ), esc_url( $settings_url ) ) ); ?></p>
+	</div>
+	<?php
 }
 
 function messenger_update_themes( $transient ) {
