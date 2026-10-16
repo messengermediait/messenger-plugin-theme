@@ -436,6 +436,7 @@ class Messenger_Plugin_Theme_Admin {
 		$package_id     = isset( $_GET['package_id'] ) ? sanitize_text_field( wp_unslash( $_GET['package_id'] ) ) : null;
 		$package        = null;
 		$latest_release  = null;
+		$previous_releases = array();
 		$package_installs = array();
 
 		if ( null !== $package_id ) {
@@ -449,10 +450,19 @@ class Messenger_Plugin_Theme_Admin {
 			if ( $package ) {
 				$latest_release = $wpdb->get_row(
 					$wpdb->prepare(
-						"SELECT id, version, release_notes, file_path FROM `$releases_table` WHERE package_id = %d ORDER BY release_date DESC, id DESC LIMIT 1",
+						"SELECT id, version, release_date, release_notes, file_path FROM `$releases_table` WHERE package_id = %d ORDER BY release_date DESC, id DESC LIMIT 1",
 						absint( $package_id )
 					)
 				);
+				if ( $latest_release ) {
+					$previous_releases = $wpdb->get_results(
+						$wpdb->prepare(
+							"SELECT id, version, release_date, release_notes FROM `$releases_table` WHERE package_id = %d AND id <> %d ORDER BY release_date DESC, id DESC",
+							absint( $package_id ),
+							$latest_release->id
+						)
+					);
+				}
 				$package_installs = $wpdb->get_results(
 					$wpdb->prepare(
 						"SELECT id, package_id, site, install_key FROM `$installs_table` WHERE package_id = %s ORDER BY id ASC",
@@ -560,7 +570,26 @@ class Messenger_Plugin_Theme_Admin {
 					<?php } else { ?>
 						<p><?php esc_html_e( 'No release has been published yet.', 'messenger-plugin-theme' ); ?></p>
 					<?php } ?>
-					<p><em><a href="#">Show previous versions...</a></em></p>
+					<details class="previous-versions">
+						<summary>Show previous versions...</summary>
+						<div class="messenger-package-container">
+							<table>
+								<tr><th>Version</th><th>Release Date</th><th>Release Notes</th><th>Download</th></tr>
+								<?php if ( empty( $previous_releases ) ) { ?>
+									<tr><td colspan="4"><?php esc_html_e( 'No previous versions are available.', 'messenger-plugin-theme' ); ?></td></tr>
+								<?php } else { ?>
+									<?php foreach ( $previous_releases as $previous_release ) { ?>
+										<tr>
+											<td><?php echo esc_html( $previous_release->version ); ?></td>
+											<td><?php echo esc_html( get_date_from_gmt( $previous_release->release_date, get_option( 'date_format' ) . ' ' . get_option( 'time_format' ) ) ); ?></td>
+											<td><?php echo wp_kses_post( wpautop( esc_html( $previous_release->release_notes ) ) ); ?></td>
+											<td><a href="<?php echo esc_url( wp_nonce_url( add_query_arg( array( 'action' => 'messenger_download_package_release', 'release_id' => $previous_release->id ), admin_url( 'admin-post.php' ) ), 'messenger_download_release_' . $previous_release->id ) ); ?>" class="btn"><?php esc_html_e( 'Download ZIP', 'messenger-plugin-theme' ); ?></a></td>
+										</tr>
+									<?php } ?>
+								<?php } ?>
+							</table>
+						</div>
+					</details>
 				</div>
 				<div class="messenger-package-container">
 					<p><strong><button onClick="showNewForm()">Publish New Version...</button></strong></p>
