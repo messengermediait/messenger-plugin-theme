@@ -152,6 +152,61 @@ class Messenger_Plugin_Theme_API extends WP_REST_Controller {
 	}
 
 	/**
+	 * Resolve a package's latest ZIP for an authorized local updater.
+	 *
+	 * @param string|null $file_path    Existing filtered value.
+	 * @param string      $package_slug Package slug.
+	 * @param string      $install_key  Installation bearer key.
+	 * @return string|WP_Error
+	 */
+	public function get_local_release_file( $file_path, $package_slug, $install_key ) {
+		if ( null !== $file_path ) {
+			return $file_path;
+		}
+
+		$package = $this->get_package( sanitize_text_field( $package_slug ) );
+		if ( is_wp_error( $package ) ) {
+			return $package;
+		}
+
+		global $wpdb;
+		$installs_table = $wpdb->prefix . 'messenger_installs';
+		$install = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT install_key FROM `$installs_table` WHERE package_id = %d AND install_key = %s LIMIT 1",
+				$package->id,
+				$install_key
+			)
+		);
+		if ( empty( $install ) || ! hash_equals( $install->install_key, $install_key ) ) {
+			return new WP_Error( 'messenger_local_download_forbidden', __( 'The installation key is invalid for this package.', 'messenger-plugin-theme' ), array( 'status' => 401 ) );
+		}
+
+		$release = $this->get_latest_release( $package->id );
+		if ( is_wp_error( $release ) ) {
+			return $release;
+		}
+
+		$private_directory = $this->get_private_release_directory();
+		if ( is_wp_error( $private_directory ) ) {
+			return $private_directory;
+		}
+
+		$file_path = realpath( $release->file_path );
+		if (
+			false === $file_path
+			|| dirname( $file_path ) !== $private_directory
+			|| ! is_file( $file_path )
+			|| ! is_readable( $file_path )
+			|| 'zip' !== strtolower( pathinfo( $file_path, PATHINFO_EXTENSION ) )
+		) {
+			return new WP_Error( 'release_unavailable', __( 'The release file is unavailable.', 'messenger-plugin-theme' ), array( 'status' => 404 ) );
+		}
+
+		return $file_path;
+	}
+
+	/**
 	 * Download the latest release for an authorized installation.
 	 *
 	 * @param WP_REST_Request $request Request object.

@@ -313,6 +313,115 @@ class Messenger_Plugin_Theme_Admin {
 		exit;
 	}
 
+	public function handle_update_package_installation() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to edit package installations.', 'messenger-plugin-theme' ) );
+		}
+
+		$package_id = isset( $_POST['package_id'] ) ? absint( $_POST['package_id'] ) : 0;
+		$installation_id = isset( $_POST['installation_id'] ) ? absint( $_POST['installation_id'] ) : 0;
+		check_admin_referer( 'messenger_update_installation_' . $package_id . '_' . $installation_id, 'messenger_update_installation_nonce' );
+
+		$site = isset( $_POST['site_url'] ) ? esc_url_raw( wp_unslash( $_POST['site_url'] ) ) : '';
+		$install_key = isset( $_POST['install_key'] ) && is_string( $_POST['install_key'] ) ? trim( wp_unslash( $_POST['install_key'] ) ) : '';
+		if ( ! $package_id || ! $installation_id || ! filter_var( $site, FILTER_VALIDATE_URL ) || ! preg_match( '/^[A-Za-z0-9!@#$%^&*()]{1,255}$/D', $install_key ) ) {
+			wp_die( esc_html__( 'Enter a valid site URL and installation key.', 'messenger-plugin-theme' ) );
+		}
+
+		global $wpdb;
+		$installs_table = $wpdb->prefix . 'messenger_installs';
+		$installation = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT id FROM `$installs_table` WHERE id = %d AND package_id = %d",
+				$installation_id,
+				$package_id
+			)
+		);
+		if ( ! $installation ) {
+			wp_die( esc_html__( 'The selected installation could not be found.', 'messenger-plugin-theme' ) );
+		}
+
+		$updated = $wpdb->update(
+			$installs_table,
+			array(
+				'site' => $site,
+				'install_key' => $install_key,
+			),
+			array(
+				'id' => $installation_id,
+				'package_id' => $package_id,
+			),
+			array( '%s', '%s' ),
+			array( '%d', '%d' )
+		);
+		if ( false === $updated ) {
+			wp_die( esc_html__( 'The package installation could not be updated.', 'messenger-plugin-theme' ) );
+		}
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page' => 'messenger-admin-options',
+					'package_id' => $package_id,
+					'installation_updated' => '1',
+				),
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
+	}
+
+	public function handle_delete_package_installation() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to delete package installations.', 'messenger-plugin-theme' ) );
+		}
+
+		$package_id = isset( $_POST['package_id'] ) ? absint( $_POST['package_id'] ) : 0;
+		$installation_id = isset( $_POST['installation_id'] ) ? absint( $_POST['installation_id'] ) : 0;
+		check_admin_referer( 'messenger_delete_installation_' . $package_id . '_' . $installation_id, 'messenger_delete_installation_nonce' );
+
+		if ( ! $package_id || ! $installation_id ) {
+			wp_die( esc_html__( 'The selected installation could not be found.', 'messenger-plugin-theme' ) );
+		}
+
+		global $wpdb;
+		$installs_table = $wpdb->prefix . 'messenger_installs';
+		$installation = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT id FROM `$installs_table` WHERE id = %d AND package_id = %d",
+				$installation_id,
+				$package_id
+			)
+		);
+		if ( ! $installation ) {
+			wp_die( esc_html__( 'The selected installation could not be found.', 'messenger-plugin-theme' ) );
+		}
+
+		$deleted = $wpdb->delete(
+			$installs_table,
+			array(
+				'id' => $installation_id,
+				'package_id' => $package_id,
+			),
+			array( '%d', '%d' )
+		);
+		if ( false === $deleted ) {
+			wp_die( esc_html__( 'The package installation could not be deleted.', 'messenger-plugin-theme' ) );
+		}
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page' => 'messenger-admin-options',
+					'package_id' => $package_id,
+					'installation_deleted' => '1',
+				),
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
+	}
+
 	public function handle_download_package_release() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'You are not allowed to download package releases.', 'messenger-plugin-theme' ) );
@@ -560,6 +669,12 @@ class Messenger_Plugin_Theme_Admin {
 				<?php if ( isset( $_GET['installation_added'] ) && '1' === $_GET['installation_added'] ) { ?>
 					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package installation created.', 'messenger-plugin-theme' ); ?></p></div>
 				<?php } ?>
+				<?php if ( isset( $_GET['installation_updated'] ) && '1' === $_GET['installation_updated'] ) { ?>
+					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package installation updated.', 'messenger-plugin-theme' ); ?></p></div>
+				<?php } ?>
+				<?php if ( isset( $_GET['installation_deleted'] ) && '1' === $_GET['installation_deleted'] ) { ?>
+					<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Package installation deleted.', 'messenger-plugin-theme' ); ?></p></div>
+				<?php } ?>
 				<h3><?php echo esc_html( $package->name ); ?> - <?php echo esc_html( $package->type ); ?></h3>
 				<div class="messenger-package-container">
 					<p><strong>Slug:</strong> <?php echo esc_html( $package->slug ); ?></p>
@@ -635,7 +750,31 @@ class Messenger_Plugin_Theme_Admin {
 							<tr><td colspan="3">No package installations currently exist</td></tr>
 						<?php } else { ?>
 							<?php foreach ( $package_installs as $install ) { ?>
-								<tr><td><?php echo esc_html( $install->site ); ?></td><td><?php echo esc_html( $install->install_key ); ?></td><td><a href="#" class="btn">Edit</a><a href="#" class="btn btn-warn">Delete</a></td></tr>
+								<tr>
+									<td><?php echo esc_html( $install->site ); ?></td>
+									<td><?php echo esc_html( $install->install_key ); ?></td>
+									<td>
+										<details>
+											<summary class="btn">Edit</summary>
+											<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+												<input type="hidden" name="action" value="messenger_update_package_installation" />
+												<input type="hidden" name="package_id" value="<?php echo esc_attr( $package->id ); ?>" />
+												<input type="hidden" name="installation_id" value="<?php echo esc_attr( $install->id ); ?>" />
+												<?php wp_nonce_field( 'messenger_update_installation_' . $package->id . '_' . $install->id, 'messenger_update_installation_nonce' ); ?>
+												<div><label for="installation-site-<?php echo esc_attr( $install->id ); ?>">Site URL: </label><input type="url" id="installation-site-<?php echo esc_attr( $install->id ); ?>" name="site_url" value="<?php echo esc_attr( $install->site ); ?>" required /></div>
+												<div><label for="installation-key-<?php echo esc_attr( $install->id ); ?>">Installation Key: </label><input type="text" id="installation-key-<?php echo esc_attr( $install->id ); ?>" name="install_key" value="<?php echo esc_attr( $install->install_key ); ?>" maxlength="255" required /></div>
+												<div><button type="submit">Save</button></div>
+											</form>
+										</details>
+										<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline">
+											<input type="hidden" name="action" value="messenger_delete_package_installation" />
+											<input type="hidden" name="package_id" value="<?php echo esc_attr( $package->id ); ?>" />
+											<input type="hidden" name="installation_id" value="<?php echo esc_attr( $install->id ); ?>" />
+											<?php wp_nonce_field( 'messenger_delete_installation_' . $package->id . '_' . $install->id, 'messenger_delete_installation_nonce' ); ?>
+											<button type="submit" class="btn btn-warn" onclick="return confirm('<?php echo esc_js( sprintf( __( 'Delete the installation for %s?', 'messenger-plugin-theme' ), $install->site ) ); ?>')">Delete</button>
+										</form>
+									</td>
+								</tr>
 							<?php } ?>
 						<?php } ?>
 					</table>

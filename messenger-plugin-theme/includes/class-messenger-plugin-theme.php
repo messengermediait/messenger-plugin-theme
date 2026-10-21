@@ -165,11 +165,14 @@ class Messenger_Plugin_Theme {
 		$this->loader->add_action( 'admin_post_messenger_create_package', $plugin_admin, 'handle_create_package' );
 		$this->loader->add_action( 'admin_post_messenger_delete_package', $plugin_admin, 'handle_delete_package' );
 		$this->loader->add_action( 'admin_post_messenger_create_package_installation', $plugin_admin, 'handle_create_package_installation' );
+		$this->loader->add_action( 'admin_post_messenger_update_package_installation', $plugin_admin, 'handle_update_package_installation' );
+		$this->loader->add_action( 'admin_post_messenger_delete_package_installation', $plugin_admin, 'handle_delete_package_installation' );
 		$this->loader->add_action( 'admin_post_messenger_publish_package_release', $plugin_admin, 'handle_publish_package_release' );
 		$this->loader->add_action( 'admin_post_messenger_download_package_release', $plugin_admin, 'handle_download_package_release' );
 
 		$plugin_api = new Messenger_Plugin_Theme_API();
 		$this->loader->add_action( 'rest_api_init', $plugin_api, 'register_routes' );
+		$this->loader->add_filter( 'messenger_plugin_theme_local_release_file', $plugin_api, 'get_local_release_file', 10, 3 );
 
 	}
 

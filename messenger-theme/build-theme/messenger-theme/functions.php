@@ -338,11 +338,22 @@ function messenger_theme_check_for_updates( $transient ) {
 
 function messenger_theme_download_update_package( $reply, $package, $upgrader, $hook_extra ) {
 	$package_url = wp_parse_url( $package );
-	$update_domain = get_option( 'messenger_update_domain', 'dev.messenger.com.au' );
+	$update_domain = get_option( 'messenger_update_domain', 'www.dev.messenger.com.au' );
 	$update_domain = strtolower( trim( (string) $update_domain ) );
 	$update_key = get_option( 'messenger_update_key', '' );
+	$download_route = '/messenger-plugin-theme/v1/package/messenger-theme/download';
+	$download_path = '/wp-json' . $download_route;
+	$query_args = array();
+	if ( is_array( $package_url ) && ! empty( $package_url['query'] ) ) {
+		wp_parse_str( $package_url['query'], $query_args );
+	}
+	$package_path = is_array( $package_url ) ? untrailingslashit( $package_url['path'] ?? '' ) : '';
+	$path_matches = strlen( $package_path ) >= strlen( $download_path )
+		&& $download_path === substr( $package_path, -strlen( $download_path ) );
+	$route_matches = isset( $query_args['rest_route'] )
+		&& $download_route === untrailingslashit( $query_args['rest_route'] );
 	if ( '' === $update_domain ) {
-		$update_domain = 'dev.messenger.com.au';
+		$update_domain = 'www.dev.messenger.com.au';
 	}
 
 	if (
@@ -350,7 +361,7 @@ function messenger_theme_download_update_package( $reply, $package, $upgrader, $
 		|| ! is_array( $package_url )
 		|| 'https' !== ( $package_url['scheme'] ?? '' )
 		|| $update_domain !== strtolower( $package_url['host'] ?? '' )
-		|| '/wp-json/messenger-plugin-theme/v1/package/messenger-theme/download' !== ( $package_url['path'] ?? '' )
+		|| ( ! $path_matches && ! $route_matches )
 	) {
 		return $reply;
 	}
@@ -360,6 +371,35 @@ function messenger_theme_download_update_package( $reply, $package, $upgrader, $
 			'messenger_theme_install_key_missing',
 			__( 'Set the Messenger theme installation key in Messenger > Settings before updating the theme.', 'messenger-theme' )
 		);
+	}
+
+	$site_host = wp_parse_url( home_url( '/' ), PHP_URL_HOST );
+	if ( is_string( $site_host ) && strtolower( $site_host ) === $update_domain ) {
+		if ( ! has_filter( 'messenger_plugin_theme_local_release_file' ) ) {
+			return new WP_Error(
+				'messenger_theme_local_release_handler_missing',
+				__( 'The local Messenger package download handler is unavailable.', 'messenger-theme' )
+			);
+		}
+
+		$local_file = apply_filters( 'messenger_plugin_theme_local_release_file', null, 'messenger-theme', $update_key );
+		if ( is_wp_error( $local_file ) ) {
+			return $local_file;
+		}
+		if ( ! is_string( $local_file ) || ! is_file( $local_file ) || ! is_readable( $local_file ) ) {
+			return new WP_Error( 'messenger_theme_local_release_unavailable', __( 'The local Messenger theme update package is unavailable.', 'messenger-theme' ) );
+		}
+
+		$temp_file = wp_tempnam( 'messenger-theme-update.zip' );
+		if ( ! $temp_file ) {
+			return new WP_Error( 'messenger_theme_update_temp_file', __( 'A temporary file could not be created for the theme update.', 'messenger-theme' ) );
+		}
+		if ( ! @copy( $local_file, $temp_file ) ) {
+			wp_delete_file( $temp_file );
+			return new WP_Error( 'messenger_theme_local_copy_failed', __( 'The local Messenger theme update package could not be copied.', 'messenger-theme' ) );
+		}
+
+		return $temp_file;
 	}
 
 	$temp_file = wp_tempnam( 'messenger-theme-update.zip' );
